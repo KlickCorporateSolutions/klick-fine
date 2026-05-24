@@ -11,6 +11,9 @@ import Login from "@/pages/Login";
 import Signup from "@/pages/Signup";
 import Onboarding from "@/pages/Onboarding";
 import Dashboard from "@/pages/Dashboard";
+import ProcessesList from "@/pages/Processes/ProcessesList";
+import NewProcess from "@/pages/Processes/NewProcess";
+import ProcessDetail from "@/pages/Processes/ProcessDetail";
 import NotFound from "@/pages/NotFound";
 
 const queryClient = new QueryClient({
@@ -43,6 +46,12 @@ function App() {
                 <Route element={<RequireOrganization />}>
                   <Route element={<AppLayout />}>
                     <Route path="/" element={<Dashboard />} />
+                    <Route path="/processes" element={<ProcessesList />} />
+                    <Route path="/processes/new" element={<NewProcess />} />
+                    <Route
+                      path="/processes/:id"
+                      element={<ProcessDetail />}
+                    />
                   </Route>
                 </Route>
               </Route>
