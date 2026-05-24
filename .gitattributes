@@ -1,0 +1,10 @@
+* text=auto eol=lf
+*.{cmd,[cC][mM][dD]} text eol=crlf
+*.{bat,[bB][aA][tT]} text eol=crlf
+*.lockb binary
+*.ico binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.svg binary
+*.pdf binary
