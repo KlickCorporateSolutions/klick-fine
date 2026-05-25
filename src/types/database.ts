@@ -319,6 +319,15 @@ export type Database = {
         Args: Record<string, never>;
         Returns: boolean;
       };
+      create_organization_with_owner: {
+        Args: {
+          org_name: string;
+          org_slug: string;
+          org_bdp_registry?: string | null;
+          org_app_name?: string | null;
+        };
+        Returns: Database["public"]["Tables"]["organizations"]["Row"];
+      };
     };
     Enums: {
       org_role: "owner" | "member";

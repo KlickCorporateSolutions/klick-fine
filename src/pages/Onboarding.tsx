@@ -54,65 +54,40 @@ export default function Onboarding() {
     }
 
     setSubmitting(true);
-    const baseSlug = slugify(values.name);
-    // Tenta com slug base; se conflito, adiciona sufixo aleatório curto
-    let slug = baseSlug;
-    let attempt = 0;
+    try {
+      const baseSlug = slugify(values.name);
 
-    while (attempt < 3) {
-      const { data: org, error: orgError } = await supabase
-        .from("organizations")
-        .insert({
-          name: values.name,
-          slug,
-          bdp_registry_number: values.bdpRegistryNumber || null,
-          branding_app_name: values.appName || null,
-        })
-        .select()
-        .single();
-
-      if (orgError) {
-        // 23505 = unique violation (slug duplicado)
-        if (orgError.code === "23505" && attempt < 2) {
-          slug = `${baseSlug}-${Math.random().toString(36).slice(2, 6)}`;
-          attempt++;
-          continue;
+      // RPC SECURITY DEFINER: cria org + membership atomicamente
+      // (resolve o problema RLS de não conseguir ler a org acabada de criar
+      //  antes de a membership existir).
+      const { data, error } = await supabase.rpc(
+        "create_organization_with_owner",
+        {
+          org_name: values.name,
+          org_slug: baseSlug,
+          org_bdp_registry: values.bdpRegistryNumber || null,
+          org_app_name: values.appName || null,
         }
+      );
+
+      if (error || !data) {
         toast.error("Falha a criar organização", {
-          description: orgError.message,
+          description: error?.message ?? "Sem dados na resposta",
         });
-        setSubmitting(false);
         return;
       }
 
-      // Cria membership como owner
-      const { error: memberError } = await supabase.from("memberships").insert({
-        user_id: user.id,
-        organization_id: org.id,
-        role: "owner",
-      });
-
-      if (memberError) {
-        toast.error("Falha a associar conta à organização", {
-          description: memberError.message,
-        });
-        setSubmitting(false);
-        return;
-      }
-
-      // Refresca contexto e muda para a nova org
+      // Refresca contexto e ativa a nova org
       await refresh();
-      switchOrganization(org.id);
+      switchOrganization(data.id);
 
       toast.success("Organização criada", {
         description: `Bem-vindo ao Klick FINE, ${values.name}!`,
       });
       navigate("/", { replace: true });
-      return;
+    } finally {
+      setSubmitting(false);
     }
-
-    setSubmitting(false);
-    toast.error("Não foi possível criar organização após várias tentativas");
   };
 
   return (
