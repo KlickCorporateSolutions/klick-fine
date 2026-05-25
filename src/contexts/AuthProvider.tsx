@@ -28,10 +28,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setLoading(false);
     });
 
-    // Subscreve a mudanças de auth (login/logout/refresh)
+    // Subscreve a mudanças de auth.
+    // IMPORTANTE: ignorar TOKEN_REFRESHED para evitar re-renders quando o
+    // utilizador troca de janela (supabase-js refresca o token nesse momento).
+    // O token novo fica internamente no client; não precisamos de refletir
+    // isso no estado React (causaria refetch de queries downstream).
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, newSession) => {
+    } = supabase.auth.onAuthStateChange((event, newSession) => {
+      if (event === "TOKEN_REFRESHED") {
+        // Atualiza apenas a referência do session sem disparar render
+        // (mantemos o mesmo user object para evitar cascata de re-renders).
+        setSession(newSession);
+        return;
+      }
       setSession(newSession);
       setUser(newSession?.user ?? null);
       setLoading(false);

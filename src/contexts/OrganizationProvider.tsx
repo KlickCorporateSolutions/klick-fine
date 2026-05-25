@@ -39,8 +39,12 @@ export function OrganizationProvider({ children }: { children: ReactNode }) {
   });
   const [loading, setLoading] = useState(true);
 
+  // userId estável (string) — evita re-fetch quando supabase-js troca de
+  // referência do user object (ex: TOKEN_REFRESHED) sem mudar o user.id real.
+  const userId = user?.id ?? null;
+
   const fetchMemberships = useCallback(async () => {
-    if (!user) {
+    if (!userId) {
       setMemberships([]);
       setLoading(false);
       return;
@@ -50,7 +54,7 @@ export function OrganizationProvider({ children }: { children: ReactNode }) {
     const { data, error } = await supabase
       .from("memberships")
       .select("*, organization:organizations(*)")
-      .eq("user_id", user.id);
+      .eq("user_id", userId);
 
     if (error) {
       console.error("Erro a obter organizações:", error);
@@ -58,23 +62,26 @@ export function OrganizationProvider({ children }: { children: ReactNode }) {
     } else {
       const rows = (data ?? []) as unknown as MembershipWithOrg[];
       setMemberships(rows);
-
-      // Se não há current org guardada ou já não existe nas memberships, escolhe a primeira
-      if (
-        rows.length > 0 &&
-        (!currentOrgId || !rows.find((m) => m.organization_id === currentOrgId))
-      ) {
-        const first = rows[0].organization_id;
-        setCurrentOrgId(first);
-        localStorage.setItem(STORAGE_KEY, first);
-      }
     }
     setLoading(false);
-  }, [user, currentOrgId]);
+  }, [userId]);
 
   useEffect(() => {
     void fetchMemberships();
   }, [fetchMemberships]);
+
+  // Auto-selecionar primeira org se não há current ou a current já não é membership válida.
+  // Separado de fetchMemberships para evitar re-fetch ao trocar de org.
+  useEffect(() => {
+    if (memberships.length === 0) return;
+    const stillValid =
+      currentOrgId && memberships.find((m) => m.organization_id === currentOrgId);
+    if (!stillValid) {
+      const first = memberships[0].organization_id;
+      setCurrentOrgId(first);
+      localStorage.setItem(STORAGE_KEY, first);
+    }
+  }, [memberships, currentOrgId]);
 
   const switchOrganization = useCallback((organizationId: string) => {
     setCurrentOrgId(organizationId);
