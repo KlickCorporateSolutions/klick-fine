@@ -80,7 +80,32 @@ Estas regras são TRANSVERSAIS e prevalecem sobre qualquer regra específica de 
 
    CAMPOS ESTRUTURAIS NÃO ANULÁVEIS (sempre obrigatórios, nunca null): montante_escritura, montante_financiamento, prazo_meses. Todos os outros campos numéricos podem ser null.
 
-7. CAMPOS RECALCULADOS NO FRONTEND: Os seguintes campos são recalculados deterministicamente no frontend e os teus valores serão substituídos: ltv, capitais_proprios, total_encargos. Devolve-os à mesma para referência/debug, mas sabe que o valor final exibido ao utilizador NÃO vem de ti. NOTA: prazo_anos NÃO faz parte do schema — usa apenas prazo_meses.
+7. CAMPOS DETERMINÍSTICOS / RECALCULADOS:
+
+   a) ltv e capitais_proprios: SEMPRE recalculados no frontend a partir de
+      montante_financiamento, avaliacao_potencial e montante_escritura.
+      Devolve-os à mesma para debug, mas o valor exibido é do frontend.
+
+   b) total_encargos: DEVE ser a soma EXATA destes 12 campos (tratando null como 0):
+        comissao_avaliacao + comissao_abertura + outras_comissoes +
+        formalizacao_escritura + is_utilizacao_credito + is_compra_venda + imt +
+        copia_certificada_documento + deposito_online +
+        documento_particular_autenticado + outorga + registos_hipoteca
+
+      REGRAS:
+      - Se um campo não consta no FINE, contá-lo como 0 para a SOMA (mas devolve
+        o campo individual como null com aviso).
+      - NÃO incluir custos periódicos/recorrentes (seguros mensais,
+        fee_gestao_mensal, manutenção de conta DO) — esses não são encargos
+        iniciais.
+      - NÃO incluir IS sobre juros (já está dentro do MTIC).
+      - O total_encargos que devolves DEVE bater com a soma dos 12 campos
+        individuais que devolves (delta máximo aceitável: 1 EUR).
+      - Esta consistência é CRÍTICA para a UI conseguir destacar o "melhor"
+        banco nas comparações. Discrepâncias entre o total e a soma serão
+        sinalizadas como warnings.
+
+   c) prazo_anos NÃO faz parte do schema — usar apenas prazo_meses.
 
 8. IMT E IS COMPRA E VENDA — REGRA GLOBAL (PREVALECE SOBRE QUALQUER REGRA DE BANCO):
 
@@ -181,38 +206,59 @@ Determina o "header_curto" para o cabeçalho da coluna na grelha:
        * Mista: TAN do PERÍODO FIXO (ex "Durante o período de taxa fixa: 2,800%")
        * Fixa: TAN única
        * Variável: TAN única (Euribor + spread contratado)
+  - tan_fixa: TAN do PERÍODO FIXO. PRESERVAR SEPARADAMENTE para a UI mostrar split em mistas.
+       * Mista: idêntico a 'tan' (TAN do período fixo)
+       * Fixa: idêntico a 'tan'
+       * Variável: null (não há período fixo neste produto)
+  - tan_variavel: TAN do PERÍODO VARIÁVEL (após step-up). PRESERVAR SEPARADAMENTE.
+       * Mista: TAN aplicável após o período fixo expirar. Procurar frase tipo
+         "Durante o período de taxa variável: 2,844%, resultante da soma do indexante
+          Euribor 6 meses de 2,144% e do spread contratado de 0,700%" → tan_variavel = 2.844
+       * Variável: idêntico a 'tan'
+       * Fixa: null (não há período variável neste produto)
   - taeg: TAEG aplicável CONTRATADA (com vendas associadas). Em CGD chama-se "TAEG com vendas associadas".
-  - spread: SPREAD CONTRATADO do período inicial do produto (com vendas associadas).
+  - spread: SPREAD CONTRATADO do período inicial do produto (com vendas associadas). [retrocompatibilidade — preferir spread_base/spread_contratado abaixo]
        * Fixa: spread da componente fixa contratada (ou null se não fizer sentido).
        * Mista: spread do PERÍODO FIXO contratado (pode ser 0% se absorvido pela componente fixa, típico CGD).
        * Variável: spread contratado único.
        * Para o spread do período variável das Mistas, usar campo SEPARADO 'spread_periodo_variavel' (ver regra geral #9). Não misturar os dois.
+  - spread_base: SPREAD BASE (SEM vendas associadas) do período relevante. NOVO CAMPO — para a UI poder comparar base vs contratado.
+       * Mista: spread BASE do período variável. Procurar frase "spread base de X%" (ex: CGD "spread base de 0,950%").
+       * Variável: spread BASE (sem bonificações).
+       * Fixa: null (não há decomposição base/contratado no período fixo da maioria dos bancos).
+  - spread_contratado: SPREAD CONTRATADO (COM vendas associadas) do período relevante. NOVO CAMPO.
+       * Mista: spread CONTRATADO do período variável (após bonificações). Procurar frase "spread contratado de X%" (ex: CGD "spread contratado de 0,700%").
+       * Variável: spread CONTRATADO.
+       * Fixa: null.
   - bonificacao_1ano: spread reduzido temporário aplicado nos primeiros N meses do contrato (N pode ser 12, 24 ou 36 conforme o produto). Default null. Santander Variável tipicamente tem 0,500% nos primeiros 36 meses. Outros bancos costumam não ter — devolver null nesse caso.
 
-3.3. INDEXANTE (formato curto, igual ao Bruno)
-Devolve "indexante" como string formatada "{nome_curto} {valor}%":
+3.3. INDEXANTE (formato uniforme — Euribor para a parte variável do produto)
 
-| Caso                                       | Formato                              | Exemplo                |
-|--------------------------------------------|--------------------------------------|------------------------|
-| Bankinter Mista X anos                     | "Mista {X}a {taxa_ref}%"             | "Mista 2a 2,25%"       |
-| Bankinter Fixa todo o prazo                | "Fixa {anos}a {taxa_ref}%"           | "Fixa 30a 4,5%"        |
-| BPI Variável                               | "Eur 6m {valor}%"                    | "Eur 6m 2,144%"        |
-| BPI Mista                                  | "Mista {X}a {taxa_ref}%"             | "Mista 3a 2,3%"        |
-| BPI Fixa                                   | "Tx Fixa {anos}a {taxa_ref}%"        | "Tx Fixa 21a 3,85%"    |
-| CGD Mista X anos                           | "Mista {X}a {taxa_ref}%"             | "Mista 2a 2,65%"       |
-| Santander Variável                         | "Eur6m {valor}%"                     | "Eur6m 2,144%"         |
-| Santander Mista                            | "Mista {X}a {taxa_ref}%"             | "Mista 2a 2,8%"        |
-| novobanco Variável Eur12M                  | "variavel 12m {valor}%"              | "variavel 12m 2,221%"  |
-| novobanco Variável Eur6M                   | "variavel 6m {valor}%"               | "variavel 6m 2,144%"   |
-| novobanco Fixa todo o prazo                | "Fixa {taxa_ref}%"                   | "Fixa 4,222%"          |
-| novobanco Mista                            | "Mista {X}a {taxa_ref}%"             | "Mista 2a 2,974%"      |
-| UCI Mista                                  | "Mista {X}a {taxa_ref}%"             | "Mista 5a 3,95%"       |
-| UCI Variável                               | "Eur6m {valor}%"                     | "Eur6m 2,144%"         |
+REGRA NOVA (substitui o formato "Mista {X}a {ref}%" do v1):
+O campo "indexante" deve representar o INDEXANTE de mercado a que o cliente fica exposto na parte variável do produto, NÃO a TAN de referência da fase fixa.
 
-Notas:
-  - "{taxa_ref}" para CGD/Bankinter/Santander/novobanco mistas é a taxa de referência interna do banco (NÃO é a TAN final, é a componente que entra na soma com o spread)
-  - Vírgula como separador decimal (português)
-  - Sem espaços extra
+| Tipo de taxa                          | Formato                              | Exemplo                |
+|---------------------------------------|--------------------------------------|------------------------|
+| Mista (qualquer banco)                | "Euribor {3m/6m/12m} {valor}%"       | "Euribor 6m 2,144%"    |
+| Variável (qualquer banco)             | "Euribor {3m/6m/12m} {valor}%"       | "Euribor 12m 2,221%"   |
+| Fixa todo o prazo                     | null                                 | (sem indexante — TAN fixa todo o prazo, sem exposição à Euribor) |
+
+Como encontrar o indexante numa Mista:
+  - Procurar na secção 4 (Taxa de juro e outros custos) a decomposição do PERÍODO VARIÁVEL com estrutura:
+      "Durante o período de taxa variável: X%, resultante da soma do indexante Euribor {N} meses de Y% e do spread contratado de Z%"
+  - Extrair {N} (3, 6 ou 12) e Y (valor numérico).
+  - Formato final: "Euribor {N}m {Y}%" com vírgula como separador decimal e sem espaços extra.
+
+Como encontrar o indexante numa Variável:
+  - Mesmo padrão da Mista, mas para o período único do produto.
+
+Como encontrar o indexante numa Fixa:
+  - Devolver null. Produtos 100% fixa não têm indexante de mercado.
+
+Notas finais:
+  - Vírgula (",") como separador decimal (PT).
+  - Sem espaços extra dentro do valor.
+  - Nunca usar "Mista Xa Y%" ou "Fixa Y%" no campo indexante — esse é o trabalho do campo 'header_curto'.
 
 3.4. PRESTAÇÕES
   - prestacao: prestação mensal em EUR
@@ -815,9 +861,11 @@ OUTPUT esperado:
   "avaliacao_potencial": 295000.00,
   "ltv": 54.24,
   "capitais_proprios": 135000.00,
-  "indexante": "Mista 2a 2,25%",
+  "indexante": "Euribor 12m 2,221%",
   "bonificacao_1ano": 0.00,
   "spread": 0.70,
+  "spread_base": null,
+  "spread_contratado": 0.70,
   "spread_periodo_variavel": 0.70,
   "prestacao": 828.49,
   "prestacao_periodo_variavel": 876.11,
@@ -825,6 +873,8 @@ OUTPUT esperado:
   "seguro_vida_mensal": 176.58,
   "seguro_multirriscos_mensal": 25.38,
   "tan": 2.25,
+  "tan_fixa": 2.25,
+  "tan_variavel": 2.921,
   "taeg": 5.60,
   "mtic": 260294.34,
   "total_encargos": 12436.14,
@@ -867,9 +917,11 @@ OUTPUT esperado:
   "avaliacao_potencial": null,
   "ltv": null,
   "capitais_proprios": 135000.00,
-  "indexante": "Mista 3a 3%",
+  "indexante": "Euribor 6m 2,144%",
   "bonificacao_1ano": 0.00,
   "spread": 0.00,
+  "spread_base": 0.95,
+  "spread_contratado": 0.70,
   "spread_periodo_variavel": 0.70,
   "prestacao": null,
   "prestacao_periodo_variavel": null,
@@ -877,6 +929,8 @@ OUTPUT esperado:
   "seguro_vida_mensal": null,
   "seguro_multirriscos_mensal": null,
   "tan": 3.00,
+  "tan_fixa": 3.00,
+  "tan_variavel": 2.844,
   "taeg": 6.20,
   "mtic": 282390.57,
   "total_encargos": null,
