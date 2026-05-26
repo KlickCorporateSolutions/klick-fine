@@ -88,8 +88,15 @@ export function OrganizationProvider({ children }: { children: ReactNode }) {
     localStorage.setItem(STORAGE_KEY, organizationId);
   }, []);
 
+  // Computação SÍNCRONA com fallback à 1ª membership:
+  //   - Se currentOrgId aponta para uma membership válida → usar essa
+  //   - Senão (currentOrgId vazio, stale, ou não bate) → cair na primeira membership
+  // Evita race condition onde RequireOrganization redirecionava para /onboarding
+  // antes do useEffect de auto-select ter chance de atualizar o currentOrgId.
   const currentMembership =
-    memberships.find((m) => m.organization_id === currentOrgId) ?? null;
+    memberships.find((m) => m.organization_id === currentOrgId) ??
+    memberships[0] ??
+    null;
   const currentOrganization = currentMembership?.organization ?? null;
 
   return (
