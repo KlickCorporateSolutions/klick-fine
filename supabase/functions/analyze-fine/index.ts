@@ -213,7 +213,12 @@ Determina o "header_curto" para o cabeçalho da coluna na grelha:
   - tan_variavel: TAN do PERÍODO VARIÁVEL (após step-up). PRESERVAR SEPARADAMENTE.
        * Mista: TAN aplicável após o período fixo expirar. Procurar frase tipo
          "Durante o período de taxa variável: 2,844%, resultante da soma do indexante
-          Euribor 6 meses de 2,144% e do spread contratado de 0,700%" → tan_variavel = 2.844
+          Euribor 6 meses de 2,144% e do spread contratado de 0,700%" → tan_variavel = 2.844.
+         REGRA CRÍTICA: tan_variavel TEM que usar o spread CONTRATADO (com vendas
+         associadas), NUNCA o spread base. Validação obrigatória:
+         tan_variavel ≈ valor_euribor + spread_contratado  (tolerância 0.02pp).
+         Se a frase do FINE der um valor que NÃO bate com indexante+spread_contratado,
+         RECALCULAR: tan_variavel = valor_euribor + spread_contratado e adicionar aviso.
        * Variável: idêntico a 'tan'
        * Fixa: null (não há período variável neste produto)
   - taeg: TAEG aplicável CONTRATADA (com vendas associadas). Em CGD chama-se "TAEG com vendas associadas".

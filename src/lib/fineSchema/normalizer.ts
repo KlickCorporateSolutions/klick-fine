@@ -114,26 +114,27 @@ export function normalizeFineExtraction(
     registosHipoteca: toNumberOrNull(sim.registos_hipoteca),
   };
 
-  // ------- Total encargos (C3: fonte única + warning se divergir) -------
+  // ------- Total encargos (C3 refinado: SEMPRE soma dos 12 campos) -------
+  // Política nova: o total exibido é SEMPRE a soma dos campos visíveis na
+  // tabela. Garante consistência total UI ↔ breakdown. O modelo pode
+  // devolver um total diferente (inclui custos extra que não mapeamos) —
+  // serve apenas como cross-check para warning de auditoria.
   const somaEncargos = Object.values(encargos)
     .map((v) => v ?? 0)
     .reduce((s, v) => s + v, 0);
   const totalCalculado = Math.round(somaEncargos * 100) / 100;
   const totalModelo = toNumberOrNull(sim.total_encargos);
 
-  let totalEncargos: number | null;
-  if (totalModelo != null) {
-    totalEncargos = totalModelo;
-    const delta = Math.abs(totalModelo - totalCalculado);
+  const totalEncargos: number | null =
+    totalCalculado > 0 ? totalCalculado : null;
+
+  if (totalModelo != null && totalEncargos != null) {
+    const delta = Math.abs(totalModelo - totalEncargos);
     if (delta > 10) {
       warnings.push(
-        `Total de encargos do modelo (€${totalModelo.toFixed(2)}) difere da soma manual (€${totalCalculado.toFixed(2)}) em €${delta.toFixed(2)} — verificar`
+        `Total de encargos do modelo (€${totalModelo.toFixed(2)}) difere da soma dos 12 campos (€${totalEncargos.toFixed(2)}) em €${delta.toFixed(2)}. Usada a SOMA (consistente com a UI); modelo apenas para auditoria.`
       );
     }
-  } else if (totalCalculado > 0) {
-    totalEncargos = totalCalculado;
-  } else {
-    totalEncargos = null;
   }
 
   // ------- Bonificações decompostas (P2 fix) -------
